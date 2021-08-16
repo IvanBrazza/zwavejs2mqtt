@@ -204,16 +204,72 @@
 											<v-col cols="12" sm="6">
 												<v-text-field
 													v-model="
-														newZwave.networkKey
+														newZwave.s0NetworkKey
 													"
-													label="Network Key"
+													label="S0 Network Key"
 													:rules="[
 														rules.validKey,
 														rules.validLength,
 													]"
 													append-outer-icon="wifi_protected_setup"
 													@click:append-outer="
-														randomKey
+														randomKey(
+															's0NetworkKey'
+														)
+													"
+												></v-text-field>
+											</v-col>
+											<v-col cols="12" sm="6">
+												<v-text-field
+													v-model="
+														newZwave.s2UnauthenticatedNetworkKey
+													"
+													label="S2 Unauthenticated Network Key"
+													:rules="[
+														rules.validKey,
+														rules.validLength,
+													]"
+													append-outer-icon="wifi_protected_setup"
+													@click:append-outer="
+														randomKey(
+															's2UnauthenticatedNetworkKey'
+														)
+													"
+												></v-text-field>
+											</v-col>
+											<v-col cols="12" sm="6">
+												<v-text-field
+													v-model="
+														newZwave.s2AuthenticatedNetworkKey
+													"
+													label="S2 Authenticated Network Key"
+													:rules="[
+														rules.validKey,
+														rules.validLength,
+													]"
+													append-outer-icon="wifi_protected_setup"
+													@click:append-outer="
+														randomKey(
+															's2AuthenticatedNetworkKey'
+														)
+													"
+												></v-text-field>
+											</v-col>
+											<v-col cols="12" sm="6">
+												<v-text-field
+													v-model="
+														newZwave.s2AccessControlNetworkKey
+													"
+													label="S2 Access Control Network Key"
+													:rules="[
+														rules.validKey,
+														rules.validLength,
+													]"
+													append-outer-icon="wifi_protected_setup"
+													@click:append-outer="
+														randomKey(
+															's2AccessControlNetworkKey'
+														)
 													"
 												></v-text-field>
 											</v-col>
@@ -1079,7 +1135,7 @@ export default {
 				return item
 			}
 		},
-		randomKey() {
+		randomKey(keyName) {
 			let key = ''
 
 			while (key.length < 32) {
@@ -1089,7 +1145,7 @@ export default {
 				key += x.length === 2 ? x : '0' + x
 			}
 
-			this.$set(this.newZwave, 'networkKey', key)
+			this.$set(this.newZwave, keyName, key)
 		},
 		readFile(file, callback) {
 			const reader = new FileReader()

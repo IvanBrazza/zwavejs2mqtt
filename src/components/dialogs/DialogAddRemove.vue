@@ -1,11 +1,20 @@
 <template>
-	<v-dialog v-model="value" max-width="430px" persistent>
+	<v-dialog v-model="value" max-width="500px" persistent>
 		<v-card>
 			<v-card-title>
 				<span class="headline">Add/Remove Device</span>
 			</v-card-title>
 
 			<v-card-text style="padding-bottom: 0">
+				Z-Wave supports the following security mechanisms:
+				<ul>
+					<li>Security S2 - fast and secure (recommended)</li>
+					<li>
+						Security S0 - secure, but slow due to a lot of overhead
+						(use only when necessary)
+					</li>
+					<li>No Encryption</li>
+				</ul>
 				<v-container fluid style="margin-top: -2rem">
 					<v-radio-group v-model="selectedMode" mandatory>
 						<v-radio :value="0">
@@ -14,29 +23,51 @@
 									<v-icon color="green accent-4" small
 										>add_circle</v-icon
 									>
-									<strong>Inclusion</strong>
+									<strong>Default Inclusion</strong>
 									<small
-										>Add using non-secure mode (best for
-										most devices)</small
+										>S2 when supported, S0 only when
+										necessary, no encryption
+										otherwise.</small
+									>
+									<small>
+										Requires user interaction during the
+										inclusion.</small
 									>
 								</div>
 							</template>
 						</v-radio>
-						<v-radio :value="1">
+						<v-radio :value="1" disabled>
 							<template v-slot:label>
 								<div class="option">
-									<v-icon color="amber accent-4" small
+									<v-icon color="blue accent-4" small
 										>enhanced_encryption</v-icon
 									>
-									<strong>Secure Inclusion</strong>
+									<strong>SmartStart</strong>
 									<small
-										>Add with security (best for
-										locks/doors)</small
+										>Support for SmartStart coming
+										soon!</small
+									>
+									<small
+										>S2 only. Allows pre-configuring the
+										device inclusion settings, which will
+										then happen without user
+										interaction.</small
 									>
 								</div>
 							</template>
 						</v-radio>
 						<v-radio :value="2">
+							<template v-slot:label>
+								<div class="option">
+									<v-icon color="amber accent-4" small
+										>power_settings_new</v-icon
+									>
+									<strong>No Encryption</strong>
+									<small>(Not recommended)</small>
+								</div>
+							</template>
+						</v-radio>
+						<v-radio :value="3">
 							<template v-slot:label>
 								<div class="option">
 									<v-icon color="red accent-4" small
@@ -94,18 +125,22 @@ export default {
 			modes: [
 				{
 					baseAction: 'Inclusion',
-					name: 'Inclusion',
-					secure: false,
+					name: 'Default Inclusion',
+					inclusion_strategy: 'InclusionStrategy.Default',
 				},
 				{
 					baseAction: 'Inclusion',
-					name: 'Secure inclusion',
-					secure: true,
+					name: 'SmartStart',
+					inclusion_strategy: 'InclusionStrategy.SmartStart',
+				},
+				{
+					baseAction: 'Inclusion',
+					name: 'No Encryption',
+					inclusion_strategy: 'InclusionStrategy.Insecure',
 				},
 				{
 					baseAction: 'Exclusion',
 					name: 'Exclusion',
-					secure: false,
 				},
 			],
 			state: 'new', // new -> wait -> start -> wait -> stop
@@ -201,8 +236,8 @@ export default {
 				}`,
 			}
 			const args = []
-			if (this.mode < 2 && this.method === 'start') {
-				args.push(this.modes[this.mode].secure)
+			if (this.mode < 3 && this.method === 'start') {
+				args.push(this.modes[this.mode].inclusion_strategy)
 			}
 			this.$emit(
 				'apiRequest',
@@ -222,7 +257,7 @@ export default {
 					type: 'warning',
 					text: `${this.modeName} stopped, no changes detected`,
 				}
-			} else if (this.mode === 2) {
+			} else if (this.mode === 3) {
 				this.alert = {
 					type: 'success',
 					text: `Node ${this.nodeFound.id} removed`,
@@ -230,7 +265,7 @@ export default {
 			} else {
 				this.alert = {
 					type: 'success',
-					text: `Device found! Node ${this.nodeFound.id} added`, // we don't know yet if it's added securely or not, need to wait interview
+					text: `Device found! Node ${this.nodeFound.id} added. Low security: ${this.nodeFound.lowSecurity}`, // we don't know yet if it's added securely or not, need to wait interview
 				}
 			}
 

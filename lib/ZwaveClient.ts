@@ -35,6 +35,10 @@ import {
 	SetValueAPIOptions,
 	ControllerStatistics,
 	NodeStatistics,
+	InclusionStrategy,
+	InclusionOptions,
+	InclusionUserCallbacks,
+	InclusionGrant,
 } from 'zwave-js'
 import {
 	CommandClasses,
@@ -43,6 +47,7 @@ import {
 	ValueMetadataString,
 	ConfigurationMetadata,
 	ZWaveErrorCodes,
+	SecurityClass,
 } from '@zwave-js/core'
 import * as utils from './utils'
 import jsonStore from './jsonStore'
@@ -299,7 +304,10 @@ export type Z2MNode = {
 
 export type ZwaveConfig = {
 	port?: string
-	networkKey?: string
+	s0NetworkKey?: string
+	s2UnauthenticatedNetworkKey?: string
+	s2AuthenticatedNetworkKey?: string
+	s2AccessControlNetworkKey?: string
 	serverEnabled?: boolean
 	serverPort?: number
 	logEnabled?: boolean
@@ -424,7 +432,16 @@ class ZwaveClient extends TypedEventEmitter<ZwaveClientEventCallbacks> {
 		this.cfg = config
 		this.socket = socket
 
-		config.networkKey = config.networkKey || process.env.NETWORK_KEY
+		config.s0NetworkKey = config.s0NetworkKey || process.env.S0_NETWORK_KEY
+		config.s2UnauthenticatedNetworkKey =
+			config.s2UnauthenticatedNetworkKey ||
+			process.env.S2_UNAUTHENTICATED_NETWORK_KEY
+		config.s2AuthenticatedNetworkKey =
+			config.s2AuthenticatedNetworkKey ||
+			process.env.S2_AUTHENTICATED_NETWORK_KEY
+		config.s2AccessControlNetworkKey =
+			config.s2AccessControlNetworkKey ||
+			process.env.S2_ACCESS_CONTROL_NETWORK_KEY
 
 		this.init()
 	}
@@ -784,7 +801,7 @@ class ZwaveClient extends TypedEventEmitter<ZwaveClientEventCallbacks> {
 			} catch (error) {
 				logger.warn(
 					`Error while looking for Node ${nodeId}
-          associations: ${error.message}`
+					associations: ${error.message}`
 				)
 				// node doesn't support groups associations
 			}
@@ -1083,9 +1100,31 @@ class ZwaveClient extends TypedEventEmitter<ZwaveClientEventCallbacks> {
 			Object.assign(zwaveOptions, this.cfg.options)
 
 			// transform network key to buffer
-			if (this.cfg.networkKey?.length === 32) {
-				zwaveOptions.networkKey = Buffer.from(
-					this.cfg.networkKey as unknown as string,
+			zwaveOptions.securityKeys = {}
+			if (this.cfg.s0NetworkKey?.length === 32) {
+				zwaveOptions.securityKeys.S0_Legacy = Buffer.from(
+					this.cfg.s0NetworkKey as unknown as string,
+					'hex'
+				)
+			}
+
+			if (this.cfg.s2UnauthenticatedNetworkKey?.length === 32) {
+				zwaveOptions.securityKeys.S2_Unauthenticated = Buffer.from(
+					this.cfg.s2UnauthenticatedNetworkKey as unknown as string,
+					'hex'
+				)
+			}
+
+			if (this.cfg.s2AuthenticatedNetworkKey?.length === 32) {
+				zwaveOptions.securityKeys.S2_Authenticated = Buffer.from(
+					this.cfg.s2AuthenticatedNetworkKey as unknown as string,
+					'hex'
+				)
+			}
+
+			if (this.cfg.s2AccessControlNetworkKey?.length === 32) {
+				zwaveOptions.securityKeys.S2_AccessControl = Buffer.from(
+					this.cfg.s2AccessControlNetworkKey as unknown as string,
 					'hex'
 				)
 			}
@@ -1541,7 +1580,10 @@ class ZwaveClient extends TypedEventEmitter<ZwaveClientEventCallbacks> {
 	/**
 	 * Start inclusion
 	 */
-	async startInclusion(secure: boolean): Promise<boolean> {
+	async startInclusion(
+		inclusion_strategy: string
+		// callbacks: Record<string, unknown>
+	): Promise<boolean> {
 		if (this._driver && !this.closed) {
 			if (this.commandsTimeout) {
 				clearTimeout(this.commandsTimeout)
@@ -1551,8 +1593,63 @@ class ZwaveClient extends TypedEventEmitter<ZwaveClientEventCallbacks> {
 			this.commandsTimeout = setTimeout(() => {
 				this.stopInclusion().catch(logger.error)
 			}, this.cfg.commandsTimeout * 1000 || 30000)
+
 			// by default beginInclusion is secured, pass true to make it not secured
-			return this._driver.controller.beginInclusion(!secure)
+			const userCallbacks: InclusionUserCallbacks = {
+				grantSecurityClasses(requested) {
+					const promise = new Promise<InclusionGrant>(
+						(resolve, reject) => {
+							// the resolve / reject functions control the fate of the promise
+							console.log(
+								`client side auth: ${requested.clientSideAuth} grant security classes! ${requested.securityClasses}`
+							)
+							const grants: Array<SecurityClass> = [
+								SecurityClass.S2_AccessControl,
+							]
+							resolve(requested)
+						}
+					)
+					return promise
+				},
+				validateDSKAndEnterPIN(dsk) {
+					return new Promise<string>((resolve, reject) => {
+						console.log('validate dsk and enter pin ' + dsk)
+						resolve('12345')
+					})
+				},
+				abort() {
+					console.log('aborted')
+				},
+			}
+
+			if (inclusion_strategy === 'InclusionStrategy.Default') {
+				const inclusionOptions: InclusionOptions = {
+					strategy: InclusionStrategy.Default,
+					userCallbacks: userCallbacks,
+				}
+				return this._driver.controller.beginInclusion(inclusionOptions)
+			} else if (inclusion_strategy == 'InclusionStrategy.Security_S2') {
+				const inclusionOptions: InclusionOptions = {
+					strategy: InclusionStrategy.Security_S2,
+					userCallbacks: userCallbacks,
+				}
+				return this._driver.controller.beginInclusion(inclusionOptions)
+			} else if (inclusion_strategy == 'InclusionStrategy.SmartStart') {
+				const inclusionOptions: InclusionOptions = {
+					strategy: InclusionStrategy.SmartStart,
+					provisioningList: 'idk',
+				}
+				return this._driver.controller.beginInclusion(inclusionOptions)
+			} else if (inclusion_strategy == 'InclusionStrategy.Insecure') {
+				const inclusionOptions: InclusionOptions = {
+					strategy: InclusionStrategy.Insecure,
+				}
+				return this._driver.controller.beginInclusion(inclusionOptions)
+			} else {
+				throw Error(
+					'Unable to start inclusion, unknown inclusion strategy'
+				)
+			}
 		}
 
 		throw Error('Driver is closed')
@@ -2009,10 +2106,10 @@ class ZwaveClient extends TypedEventEmitter<ZwaveClientEventCallbacks> {
 
 	private _onDriverReady() {
 		/*
-    Now the controller interview is complete. This means we know which nodes
-    are included in the network, but they might not be ready yet.
-    The node interview will continue in the background.
-  */
+		Now the controller interview is complete. This means we know which nodes
+		are included in the network, but they might not be ready yet.
+		The node interview will continue in the background.
+	*/
 
 		// driver ready
 		this.status = ZwaveClientStatus.DRIVER_READY
@@ -2036,7 +2133,24 @@ class ZwaveClient extends TypedEventEmitter<ZwaveClientEventCallbacks> {
 				.on('exclusion stopped', this._onExclusionStopped.bind(this))
 				.on('inclusion failed', this._onInclusionFailed.bind(this))
 				.on('exclusion failed', this._onExclusionFailed.bind(this))
-				.on('node added', this._onNodeAdded.bind(this))
+				.on('node added', (zwaveNode, result) => {
+					logger.info(
+						`Node ${zwaveNode.id}: added. Low security: ${result.lowSecurity}`
+					)
+
+					// the driver is ready so this node has been added on fly
+					if (this.driverReady) {
+						const node = this._addNode(zwaveNode)
+						this.sendToSocket(socketEvents.nodeAdded, node)
+					}
+
+					this.emit(
+						'event',
+						EventSource.CONTROLLER,
+						'node added',
+						this._nodes.get(zwaveNode.id)
+					)
+				})
 				.on('node removed', this._onNodeRemoved.bind(this))
 				.on(
 					'heal network progress',
@@ -2182,8 +2296,10 @@ class ZwaveClient extends TypedEventEmitter<ZwaveClientEventCallbacks> {
 	/**
 	 * Triggered when a node is added
 	 */
-	private _onNodeAdded(zwaveNode: ZWaveNode) {
-		logger.info(`Node ${zwaveNode.id}: added`)
+	private _onNodeAdded(zwaveNode: ZWaveNode, result: any) {
+		logger.info(
+			`Node ${zwaveNode.id}: added. Low security: ${result.lowSecurity}`
+		)
 
 		// the driver is ready so this node has been added on fly
 		if (this.driverReady) {
